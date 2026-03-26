@@ -1,174 +1,48 @@
+// server.js
+const express = require('express');
 const http = require('http');
+const path = require('path');
 const WebSocket = require('ws');
-const os = require('os');
 
+const app = express();
 
+// Servir les fichiers statiques (HTML/JS/CSS)
+app.use(express.static(path.join(__dirname, 'public')));
 
-function decompressBase64Gzip(b64data) {
-  const compressedBuffer = Buffer.from(b64data, 'base64');
-  const decompressedBuffer = zlib.gunzipSync(compressedBuffer);
-  return JSON.parse(decompressedBuffer.toString('utf-8'));
-}
+// Créer serveur HTTP
+const server = http.createServer(app);
 
-
-const agents = new Map(); // hostname => ws
-
-// Fonction pour récupérer l'IP locale (IPv4 non loopback)
-function getLocalIPAddress() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return '127.0.0.1'; // Fallback si aucun trouvé
-}
-
-const localIP = getLocalIPAddress();
-
-// Serveur HTTP minimal
-const server = http.createServer((req, res) => {
-  res.writeHead(404);
-  res.end("WebSocket Server Only");
-});
-
-// Serveur WebSocket
+// WebSocket server
 const wss = new WebSocket.Server({ server });
 
+// Gérer les connexions WebSocket
 wss.on('connection', (ws, req) => {
-  const ip = req.socket.remoteAddress;
-  console.log(`[+] Client connected ->  ${ip}`);
+  console.log('[+] Client connecté');
 
-
-
-
-
-  /* CLIENT SPECIFIQUE */
+  // Réception de message
   ws.on('message', (msg) => {
-      try {
-        const data = JSON.parse(msg);
-  
-      if (data.type === 'broadcast_command') {
-        // On envoie la commande à tous les clients connectés
-        const payload = JSON.stringify({
-          type: 'command',
-          command: data.command
-        });
-  
-        console.log(`BROADCAST COMMAND RECEIVED -> "${data.command}"`);
-  
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(payload);
-          }
-        });
-  
-      } else if (data.type === 'register'){
-          const ip = data.ip;
-  
-          agents.set(ip, ws);
-  
-          console.log(`AGENT SAVED WITH IP: ${ip}`);
+    console.log('[<] Message reçu:', msg.toString());
 
-
-
-          
-      } else if (data.type === 'upload_process_config') {
-          console.log("data configuration process received", data);
-                // 🔁 Broadcast à tous les clients (y compris l’émetteur si tu veux)
-          const payload = JSON.stringify({
-            type: 'process_config_broadcast',
-            allowed_processes: data.allowed_process
-          });
-
-          wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(payload);
-            }
-          });
-
-          console.log(`>> BROADCASTED CLIENT : ${wss.clients.size} ZOMBIES`);
-        
-
-        
-        
-
-
-
-      } else if (data.type === 'command') {
-        const targetIP = data.target;  // IP cible reçue
-        const command = data.command;
-      
-        console.log(`HOSTNAME AGENT CONNECTED -> "${targetIP}"`);
-      
-        // Récupère le client WebSocket de l'agent cible
-        const targetClient = agents.get(targetIP);
-      
-        if (targetClient && targetClient.readyState === WebSocket.OPEN) {
-          const payload = JSON.stringify({
-            type: 'command',
-            command: command
-          });
-      
-          targetClient.send(payload);
-      
-          console.log(`COMMAND SEND to ${targetIP} -> "${command}"`);
-        } else {
-          console.log(`[❌] AGENT ${targetIP} NOT FOUND`);
-        }
-      
-      
-
-
-      } 
-      
-      
-      else {
-        // Cas par défaut : relay message
-        console.log(`MESSAGE  RECEIVED :`, msg);
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(msg);
-          }
-        });
+    // Echo à tous les clients connectés
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(`Server dit : ${msg}`);
       }
-  
-    } catch (err) {
-      console.error("[⛔] ERROR JSON :", err.message);
-    }
+    });
   });
-  
-
-
-
 
   ws.on('close', () => {
-    console.log('Client Disconnected');
+    console.log('[-] Client déconnecté');
   });
-
-
-
-
-  
-
-
-  /* COMMAND AUTO 
-  
-  setTimeout(() => {
-    const command = {
-      type: 'command',
-      command: ''
-    };
-    ws.send(JSON.stringify(command));
-    console.log('Command Sent:', command.command);
-  }, 5000);
-*/
-
 });
 
+// Endpoint test
+app.get('/api/hello', (req, res) => {
+  res.json({ message: 'Hello from server!' });
+});
 
-server.listen(9000, localIP, () => {
-  console.log(`Server Websocket is available : ws://${localIP}:9000`);
+// Render fournit le port via process.env.PORT
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Serveur HTTP + WebSocket en ligne sur le port ${PORT}`);
 });
