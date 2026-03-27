@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -6,43 +5,69 @@ const WebSocket = require('ws');
 
 const app = express();
 
-// Servir les fichiers statiques (HTML/JS/CSS)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Créer serveur HTTP
-const server = http.createServer(app);
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
+});
 
-// WebSocket server
+const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Gérer les connexions WebSocket
-wss.on('connection', (ws, req) => {
-  console.log('[+] Client connecté');
+// agents map
+const agents = new Map();
 
-  // Réception de message
+// broadcast helper
+function broadcast(data) {
+  const msg = JSON.stringify(data);
+
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+    }
+  });
+}
+
+wss.on('connection', (ws) => {
+  console.log('[+] client connected');
+
   ws.on('message', (msg) => {
-    console.log('[<] Message reçu:', msg.toString());
+    try {
+      const data = JSON.parse(msg.toString());
 
-    // Echo à tous les clients connectés
-    wss.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(`Server dit : ${msg}`);
+      // ⚡ REGISTER EVENT (IMPORTANT FIX)
+      if (data.type === 'register') {
+        const id = data.id || Date.now().toString();
+
+        agents.set(id, ws);
+
+        console.log('[+] new agent:', id);
+
+        // send confirmation only to dashboard
+        ws.send(JSON.stringify({
+          type: 'register',
+          id: id
+        }));
+
+        // notify all clients
+        broadcast({
+          type: 'register',
+          id: id
+        });
       }
-    });
+
+    } catch (e) {
+      console.log('[!] invalid message');
+    }
   });
 
   ws.on('close', () => {
-    console.log('[-] Client déconnecté');
+    console.log('[-] client disconnected');
   });
 });
 
-// Endpoint test
-app.get('/api/hello', (req, res) => {
-  res.json({ message: 'Hello from server!' });
-});
-
-// Render fournit le port via process.env.PORT
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, () => {
-  console.log(`Serveur HTTP + WebSocket en ligne sur le port ${PORT}`);
+  console.log('[+] server running on', PORT);
 });

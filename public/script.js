@@ -1,18 +1,42 @@
-const ws = new WebSocket(`ws://${window.location.host}`);
+const ws = new WebSocket("ws://192.168.88.18:3000");
 
-ws.onopen = () => {
-  console.log('[+] Connecté au serveur WebSocket');
-};
+const agents = {};
+
+function renderAgents(agentID) {
+  const agentList = document.getElementById('agentList');
+  agentList.innerHTML = agentID;
+  console.log("ID AGENT :" + agentID);
+}
+
 
 ws.onmessage = (event) => {
-  const messages = document.getElementById('messages');
-  const li = document.createElement('li');
-  li.textContent = event.data;
-  messages.appendChild(li);
-};
+  try {
+    const data = JSON.parse(event.data);
 
-function sendMsg() {
-  const input = document.getElementById('msg');
-  ws.send(input.value);
-  input.value = '';
-}
+    switch (data.type) {
+
+      case "register":
+        console.log("NEW AGENT FOUND!");
+        renderAgents(data.id);
+        break;
+
+      default:
+        console.log("[RAW]", event.data);
+    }
+
+  } catch (e) {
+    console.log("[ERROR PARSE]", event.data);
+  }
+
+
+  ws.onopen = () => {
+    console.log('[+] Connected to server');
+  
+    // ⚡ IMPORTANT: register client
+    ws.send(JSON.stringify({
+      type: "register",
+      id: id
+    }));
+  };
+  
+};

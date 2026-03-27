@@ -1,15 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <title>WebSocket Test</title>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="assets/style.css">
+  <title>Agent Monitor Panel</title>
+
+ 
 </head>
+
 <body>
-  <h1>Test WebSocket Node.js</h1>
-  <input id="msg" placeholder="Tape un message"/>
-  <button onclick="sendMsg()">Envoyer</button>
 
-  <ul id="messages"></ul>
+<header>LIVE AGENT MONITOR</header>
 
-  <script src="script.js"></script>
-</body>
-</html>
+<div id="container">
+
+  <div id="agents">
+    <h3>Agents connectés</h3>
+    <div id="agentList"></div>
+  </div>
+
+<!-- SCRIPT -->
+<script src="script.js"></script>
+
+
+</div>
