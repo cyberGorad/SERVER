@@ -1,260 +1,126 @@
-const WebSocket = require('ws');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+// ============================================================
+// CONFIGURATION
+// ============================================================
+// En local : ws://localhost:8080
+// En production : wss://server-1-cnxd.onrender.com
+const WS_URL = 'wss://server-1-cnxd.onrender.com';
 
 // ============================================================
-// SERVEUR HTTP
+// ÉLÉMENTS DOM
 // ============================================================
-const server = http.createServer((req, res) => {
-    // Servir index.html
-    if (req.url === '/' || req.url === '/index.html') {
-        const filePath = path.join(__dirname, 'public', 'index.html');
-        fs.readFile(filePath, (err, data) => {
-            if (err) {
-                res.writeHead(500);
-                res.end('Erreur serveur');
-                return;
-            }
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(data);
-        });
-        return;
-    }
+const messagesDiv = document.getElementById('messages');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send-btn');
+const statusDiv = document.getElementById('status');
 
-    // API stats
-    if (req.url === '/stats') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            clients: wss.clients.size,
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString()
-        }));
-        return;
-    }
-
-    res.writeHead(404);
-    res.end('Not Found');
-});
+let ws = null;
+let connected = false;
 
 // ============================================================
-// SERVEUR WEBSOCKET
+// FONCTIONS
 // ============================================================
-const wss = new WebSocket.Server({ server });
+function addMessage(text, type = 'other') {
+    const div = document.createElement('div');
+    div.className = `msg ${type}`;
+    div.textContent = text;
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
 
-// Stockage des clients
-const clients = new Map();
+function updateStatus(state, text) {
+    statusDiv.textContent = text;
+    statusDiv.className = state;
+}
 
-wss.on('connection', (ws, req) => {
-    const clientIP = req.socket.remoteAddress;
-    const clientId = `User${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+function setConnected(state) {
+    connected = state;
+    input.disabled = !state;
+    sendBtn.disabled = !state;
     
-    console.log(`[+] ${clientId} (${clientIP}) connecté`);
-    clients.set(ws, { id: clientId, ip: clientIP });
+    if (state) {
+        updateStatus('connected', '✅ Connecté');
+        input.focus();
+    } else {
+        updateStatus('disconnected', '⛔ Déconnecté');
+    }
+}
 
-    // ============================================================
-    // MESSAGE DE BIENVENUE
-    // ============================================================
-    const welcomeMsg = JSON.stringify({
-        type: 'system',
-        message: `👋 Bienvenue ${clientId} ! Tape /help pour la liste des commandes.`,
-        users: Array.from(clients.values()).map(c => c.id)
-    });
-    ws.send(welcomeMsg);
+function connect() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        return;
+    }
 
-    // Notifier les autres
-    broadcast({
-        type: 'system',
-        message: `🌟 ${clientId} a rejoint le chat !`,
-        users: Array.from(clients.values()).map(c => c.id)
-    }, ws);
+    updateStatus('connecting', '⏳ Connexion...');
+    addMessage('🔗 Connexion en cours...', 'system');
 
-    // ============================================================
-    // RÉCEPTION DES MESSAGES
-    // ============================================================
-    ws.on('message', (data) => {
-        const raw = data.toString().trim();
-        if (!raw) return;
+    try {
+        ws = new WebSocket(WS_URL);
 
-        const user = clients.get(ws);
-        if (!user) return;
+        ws.onopen = () => {
+            addMessage('✅ Connecté au serveur !', 'system');
+            setConnected(true);
+        };
 
-        console.log(`[${user.id}] ${raw}`);
+        ws.onmessage = (event) => {
+            addMessage(event.data, 'other');
+        };
 
-        // --- DÉTECTION DU TYPE DE MESSAGE ---
-        let isJson = false;
-        let parsed = null;
+        ws.onerror = () => {
+            addMessage('❌ Erreur de connexion', 'system');
+            updateStatus('disconnected', '❌ Erreur');
+        };
 
-        try {
-            parsed = JSON.parse(raw);
-            isJson = true;
-        } catch (e) {
-            isJson = false;
-        }
+        ws.onclose = () => {
+            addMessage('⛔ Déconnecté du serveur', 'system');
+            setConnected(false);
+            ws = null;
+        };
 
-        // --- COMMANDES (pour les clients texte brut) ---
-        if (!isJson && raw.startsWith('/')) {
-            const parts = raw.split(' ');
-            const cmd = parts[0].toLowerCase();
+    } catch (e) {
+        addMessage(`❌ Erreur : ${e.message}`, 'system');
+        setConnected(false);
+    }
+}
 
-            switch (cmd) {
-                case '/help':
-                    ws.send(JSON.stringify({
-                        type: 'system',
-                        message: `📋 Commandes : /help /nick <nom> /users /whoami /ping /exit`
-                    }));
-                    return;
+function sendMessage() {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) {
+        addMessage('❌ Pas connecté', 'system');
+        return;
+    }
 
-                case '/nick':
-                    if (parts.length < 2) {
-                        ws.send(JSON.stringify({
-                            type: 'system',
-                            message: '❌ Utilisation : /nick <nouveau_pseudo>'
-                        }));
-                        return;
-                    }
-                    const newName = parts.slice(1).join(' ');
-                    const oldName = user.id;
-                    user.id = newName;
-                    broadcast({
-                        type: 'system',
-                        message: `✏️ ${oldName} s'appelle maintenant ${newName}`,
-                        users: Array.from(clients.values()).map(c => c.id)
-                    }, ws);
-                    return;
+    const text = input.value.trim();
+    if (!text) return;
 
-                case '/users':
-                    const userList = Array.from(clients.values()).map(c => `  - ${c.id}`).join('\n');
-                    ws.send(JSON.stringify({
-                        type: 'system',
-                        message: `👥 Connectés (${clients.size}) :\n${userList}`
-                    }));
-                    return;
-
-                case '/whoami':
-                    ws.send(JSON.stringify({
-                        type: 'system',
-                        message: `👤 Tu es : ${user.id}`
-                    }));
-                    return;
-
-                case '/ping':
-                    ws.send(JSON.stringify({
-                        type: 'system',
-                        message: '🏓 Pong !'
-                    }));
-                    return;
-
-                case '/exit':
-                    ws.send(JSON.stringify({
-                        type: 'system',
-                        message: '👋 Déconnexion...'
-                    }));
-                    ws.close();
-                    return;
-
-                default:
-                    ws.send(JSON.stringify({
-                        type: 'system',
-                        message: `❌ Commande inconnue : ${cmd}. Tape /help.`
-                    }));
-                    return;
-            }
-        }
-
-        // --- TRAITEMENT DES MESSAGES JSON (client web / Python) ---
-        if (isJson && parsed) {
-            // Message standard (client web)
-            if (parsed.type === 'message') {
-                broadcast({
-                    type: 'message',
-                    from: user.id,
-                    content: parsed.content || parsed.message || raw,
-                    timestamp: new Date().toLocaleTimeString()
-                }, ws);
-                return;
-            }
-            // Changement de pseudo (client web)
-            if (parsed.type === 'setname' && parsed.name) {
-                const oldName = user.id;
-                user.id = parsed.name;
-                broadcast({
-                    type: 'system',
-                    message: `✏️ ${oldName} s'appelle maintenant ${parsed.name}`,
-                    users: Array.from(clients.values()).map(c => c.id)
-                }, ws);
-                return;
-            }
-        }
-
-        // --- MESSAGE TEXTE BRUT (client Python / netcat) ---
-        // On broadcast le message tel quel
-        broadcast({
-            type: 'message',
-            from: user.id,
-            content: raw,
-            timestamp: new Date().toLocaleTimeString()
-        }, ws);
-    });
-
-    // ============================================================
-    // DÉCONNEXION
-    // ============================================================
-    ws.on('close', () => {
-        const user = clients.get(ws);
-        if (user) {
-            console.log(`[-] ${user.id} déconnecté`);
-            clients.delete(ws);
-            broadcast({
-                type: 'system',
-                message: `👋 ${user.id} a quitté le chat`,
-                users: Array.from(clients.values()).map(c => c.id)
-            });
-        }
-    });
-
-    ws.on('error', (err) => {
-        console.error(`[!] Erreur: ${err.message}`);
-    });
-});
-
-// ============================================================
-// FONCTION BROADCAST
-// ============================================================
-function broadcast(data, exclude) {
-    const msg = typeof data === 'string' ? data : JSON.stringify(data);
-    wss.clients.forEach((client) => {
-        if (client !== exclude && client.readyState === WebSocket.OPEN) {
-            client.send(msg);
-        }
-    });
+    addMessage(`Moi : ${text}`, 'self');
+    ws.send(text);
+    input.value = '';
+    input.focus();
 }
 
 // ============================================================
-// PING/PONG (pour Render)
+// ÉVÉNEMENTS
 // ============================================================
-setInterval(() => {
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.ping();
-        }
-    });
-}, 25000);
+sendBtn.addEventListener('click', sendMessage);
 
-wss.on('pong', () => {});
+input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+// Cliquer sur le statut pour reconnecter
+statusDiv.addEventListener('click', () => {
+    if (!connected) connect();
+});
 
 // ============================================================
 // DÉMARRAGE
 // ============================================================
-const PORT = process.env.PORT || 8080;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-╔══════════════════════════════════════════════════╗
-║  ✅ Serveur CHAT démarré                       ║
-╠══════════════════════════════════════════════════╣
-║  Port     : ${PORT}                               ║
-║  Web      : https://server-1-cnxd.onrender.com  ║
-║  WebSocket: wss://server-1-cnxd.onrender.com    ║
-╚══════════════════════════════════════════════════╝
-    `);
-});
+addMessage('💬 Chat simple', 'system');
+addMessage(`🔗 Serveur : ${WS_URL}`, 'system');
+addMessage('📋 Tape un message et envoie-le !', 'system');
+
+// Connexion automatique
+setTimeout(connect, 500);
