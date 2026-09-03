@@ -5,12 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💬 Chat WebSocket</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #0a0a0a;
@@ -20,7 +15,6 @@
             justify-content: center;
             align-items: center;
         }
-
         .chat-container {
             width: 90%;
             max-width: 800px;
@@ -34,39 +28,48 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
             border: 1px solid #333;
         }
-
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding-bottom: 15px;
             border-bottom: 1px solid #0f3460;
+            flex-wrap: wrap;
+            gap: 8px;
         }
-
         .header h1 {
             font-size: 22px;
             color: #e94560;
             letter-spacing: 1px;
         }
-
         .header .status {
             font-size: 13px;
-            padding: 4px 12px;
+            padding: 4px 14px;
             border-radius: 20px;
             background: #333;
             color: #888;
+            cursor: pointer;
+            transition: 0.2s;
+            user-select: none;
         }
-
+        .header .status:hover { opacity: 0.8; }
         .header .status.connected {
             background: #1b5e20;
             color: #66bb6a;
         }
-
         .header .status.disconnected {
             background: #5e1b1b;
             color: #ef5350;
         }
-
+        .header .status.connecting {
+            background: #5e4a1b;
+            color: #ffd54f;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
         #messages {
             flex: 1;
             overflow-y: auto;
@@ -78,21 +81,17 @@
             min-height: 300px;
             max-height: 500px;
         }
-
         #messages::-webkit-scrollbar {
             width: 6px;
         }
-
         #messages::-webkit-scrollbar-thumb {
             background: #e94560;
             border-radius: 3px;
         }
-
         #messages::-webkit-scrollbar-track {
             background: #0a0a0a;
             border-radius: 3px;
         }
-
         .msg {
             margin: 6px 0;
             padding: 8px 14px;
@@ -101,8 +100,12 @@
             word-wrap: break-word;
             line-height: 1.5;
             font-size: 15px;
+            animation: fadeIn 0.3s ease;
         }
-
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         .msg.system {
             background: transparent;
             color: #ffd700;
@@ -112,40 +115,34 @@
             font-size: 13px;
             padding: 4px;
         }
-
         .msg.other {
             background: #1a1a2e;
             border-left: 3px solid #e94560;
             margin-right: auto;
             border-radius: 10px 10px 10px 4px;
         }
-
         .msg.self {
             background: #e94560;
             margin-left: auto;
             border-radius: 10px 10px 4px 10px;
         }
-
         .msg .author {
             font-size: 12px;
             font-weight: bold;
             color: #ffd700;
             margin-bottom: 2px;
         }
-
         .msg .time {
             font-size: 10px;
             color: #888;
             margin-left: 10px;
         }
-
         .input-area {
             display: flex;
             gap: 10px;
             padding-top: 15px;
             border-top: 1px solid #0f3460;
         }
-
         #input {
             flex: 1;
             padding: 12px 18px;
@@ -157,15 +154,12 @@
             outline: none;
             transition: 0.2s;
         }
-
         #input:focus {
             box-shadow: 0 0 0 2px #e94560;
         }
-
         #input:disabled {
             opacity: 0.5;
         }
-
         #btn-send {
             padding: 12px 30px;
             border: none;
@@ -178,35 +172,29 @@
             transition: 0.2s;
             white-space: nowrap;
         }
-
-        #btn-send:hover {
+        #btn-send:hover:not(:disabled) {
             background: #c73652;
             transform: scale(1.03);
         }
-
         #btn-send:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
-
         .footer {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding-top: 10px;
             font-size: 12px;
             color: #555;
+            flex-wrap: wrap;
+            gap: 5px;
         }
-
-        .footer a {
-            color: #888;
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            color: #e94560;
-        }
-
+        .footer .online { color: #66bb6a; }
+        .footer .offline { color: #ef5350; }
+        .footer a { color: #888; text-decoration: none; }
+        .footer a:hover { color: #e94560; }
         @media (max-width: 600px) {
             .chat-container {
                 height: 100vh;
@@ -215,190 +203,230 @@
                 border-radius: 0;
                 padding: 15px;
             }
-            .header h1 {
-                font-size: 18px;
-            }
-            .msg {
-                font-size: 14px;
-            }
-            #btn-send {
-                padding: 12px 20px;
-            }
+            .header h1 { font-size: 18px; }
+            .msg { font-size: 14px; }
+            #btn-send { padding: 12px 20px; }
         }
     </style>
 </head>
 <body>
 
-    <div class="chat-container">
-        <div class="header">
-            <h1>💬 Chat</h1>
-            <span class="status disconnected" id="status">⛔ Déconnecté</span>
-        </div>
-
-        <div id="messages"></div>
-
-        <div class="input-area">
-            <input type="text" id="input" placeholder="Tape ton message..." disabled>
-            <button id="btn-send" disabled>Envoyer</button>
-        </div>
-
-        <div class="footer">
-            <span>🔗 <span id="ws-url">wss://server-1-cnxd.onrender.com</span></span>
-            <span>/help pour les commandes</span>
-        </div>
+<div class="chat-container">
+    <div class="header">
+        <h1>💬 Chat</h1>
+        <span class="status disconnected" id="status" title="Clique pour reconnecter">
+            ⛔ Déconnecté
+        </span>
     </div>
 
-    <script>
-        const messagesDiv = document.getElementById('messages');
-        const input = document.getElementById('input');
-        const sendBtn = document.getElementById('btn-send');
-        const statusEl = document.getElementById('status');
+    <div id="messages"></div>
 
-        // === CONFIGURATION ===
-        const WS_URL = 'wss://server-1-cnxd.onrender.com';
-        let ws = null;
-        let connected = false;
+    <div class="input-area">
+        <input type="text" id="input" placeholder="Tape ton message..." disabled>
+        <button id="btn-send" disabled>Envoyer</button>
+    </div>
 
-        // === FONCTIONS ===
-        function addMessage(type, content, author = '', time = '') {
-            const div = document.createElement('div');
-            div.className = `msg ${type}`;
+    <div class="footer">
+        <span>👥 <span id="user-count">0</span> connecté(s)</span>
+        <span id="connection-status-text" class="offline">🔴 Hors ligne</span>
+        <span>📋 <a href="#" onclick="showHelp()">/help</a></span>
+    </div>
+</div>
 
-            if (type === 'system') {
-                div.textContent = content;
-            } else {
-                const authorSpan = document.createElement('span');
-                authorSpan.className = 'author';
-                authorSpan.textContent = author;
-                div.appendChild(authorSpan);
+<script>
+// ============================================================
+// CONFIGURATION
+// ============================================================
+const WS_URL = 'wss://server-1-cnxd.onrender.com';
+let ws = null;
+let connected = false;
+let username = null;
 
-                if (time) {
-                    const timeSpan = document.createElement('span');
-                    timeSpan.className = 'time';
-                    timeSpan.textContent = time;
-                    div.appendChild(timeSpan);
-                }
+// ============================================================
+// DOM ELEMENTS
+// ============================================================
+const messagesDiv = document.getElementById('messages');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('btn-send');
+const statusEl = document.getElementById('status');
+const userCountEl = document.getElementById('user-count');
+const connStatusText = document.getElementById('connection-status-text');
 
-                const contentSpan = document.createElement('div');
-                contentSpan.textContent = content;
-                div.appendChild(contentSpan);
-            }
+// ============================================================
+// FONCTIONS
+// ============================================================
+function addMessage(type, content, author = '', time = '') {
+    const div = document.createElement('div');
+    div.className = `msg ${type}`;
 
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    if (type === 'system') {
+        div.textContent = content;
+    } else {
+        const authorSpan = document.createElement('span');
+        authorSpan.className = 'author';
+        authorSpan.textContent = author;
+        div.appendChild(authorSpan);
+
+        if (time) {
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'time';
+            timeSpan.textContent = time;
+            div.appendChild(timeSpan);
         }
 
-        function updateStatus(state, msg) {
-            statusEl.textContent = msg;
-            statusEl.className = `status ${state}`;
-        }
+        const contentSpan = document.createElement('div');
+        contentSpan.textContent = content;
+        div.appendChild(contentSpan);
+    }
 
-        function setConnected(state) {
-            connected = state;
-            input.disabled = !state;
-            sendBtn.disabled = !state;
-            if (state) {
-                updateStatus('connected', '✅ Connecté');
-                input.focus();
-            } else {
-                updateStatus('disconnected', '⛔ Déconnecté');
-            }
-        }
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
 
-        function connect() {
-            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-                ws.close();
-                return;
-            }
+function updateStatus(state, msg) {
+    statusEl.textContent = msg;
+    statusEl.className = `status ${state}`;
+    
+    if (state === 'connected') {
+        connStatusText.textContent = '🟢 En ligne';
+        connStatusText.className = 'online';
+    } else if (state === 'connecting') {
+        connStatusText.textContent = '🟡 Connexion...';
+        connStatusText.className = 'offline';
+    } else {
+        connStatusText.textContent = '🔴 Hors ligne';
+        connStatusText.className = 'offline';
+    }
+}
 
-            addMessage('system', '🔗 Connexion en cours...');
-            updateStatus('disconnected', '⏳ Connexion...');
+function setConnected(state) {
+    connected = state;
+    input.disabled = !state;
+    sendBtn.disabled = !state;
+    
+    if (state) {
+        updateStatus('connected', '✅ Connecté');
+        input.focus();
+    } else {
+        updateStatus('disconnected', '⛔ Déconnecté');
+    }
+}
 
+function showHelp() {
+    addMessage('system', `
+📋 Commandes disponibles :
+  /help       - Affiche cette aide
+  /nick <nom> - Change ton pseudo
+  /users      - Liste des utilisateurs connectés
+  /whoami     - Affiche ton pseudo
+  /ping       - Test de latence
+  /exit       - Quitte le chat
+    `);
+}
+
+function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close();
+        return;
+    }
+
+    addMessage('system', '🔗 Connexion en cours...');
+    updateStatus('connecting', '⏳ Connexion...');
+
+    try {
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+            addMessage('system', '✅ Connecté au serveur !');
+            setConnected(true);
+        };
+
+        ws.onmessage = (event) => {
             try {
-                ws = new WebSocket(WS_URL);
+                const data = JSON.parse(event.data);
 
-                ws.onopen = () => {
-                    addMessage('system', '✅ Connecté au serveur !');
-                    setConnected(true);
-                };
-
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (data.type === 'system') {
-                            addMessage('system', data.message);
-                        } else if (data.type === 'message') {
-                            addMessage('other', data.content, data.from, data.timestamp);
-                        }
-                    } catch (e) {
-                        // Message brut (si serveur envoie du texte simple)
-                        addMessage('system', event.data);
-                    }
-                };
-
-                ws.onerror = (error) => {
-                    addMessage('system', '❌ Erreur de connexion');
-                    updateStatus('disconnected', '❌ Erreur');
-                };
-
-                ws.onclose = () => {
-                    addMessage('system', '⛔ Déconnecté du serveur');
-                    setConnected(false);
-                    ws = null;
-                };
-
+                if (data.type === 'system') {
+                    addMessage('system', data.message);
+                } else if (data.type === 'message') {
+                    addMessage('other', data.content, data.from, data.timestamp);
+                }
+                
+                if (data.users) {
+                    userCountEl.textContent = data.users.length;
+                }
             } catch (e) {
-                addMessage('system', `❌ Erreur : ${e.message}`);
-                setConnected(false);
+                // Message brut (ex: depuis Python ou netcat)
+                addMessage('other', event.data, 'Netcat/Python');
             }
-        }
+        };
 
-        function sendMessage() {
-            if (!connected || !ws || ws.readyState !== WebSocket.OPEN) {
-                addMessage('system', '❌ Pas connecté au serveur');
-                return;
-            }
+        ws.onerror = (error) => {
+            addMessage('system', '❌ Erreur de connexion');
+            updateStatus('disconnected', '❌ Erreur');
+        };
 
-            const text = input.value.trim();
-            if (!text) return;
+        ws.onclose = () => {
+            addMessage('system', '⛔ Déconnecté du serveur');
+            setConnected(false);
+            userCountEl.textContent = '0';
+            ws = null;
+        };
 
-            // Afficher le message dans la bulle "self"
-            addMessage('self', text, 'Moi');
+    } catch (e) {
+        addMessage('system', `❌ Erreur : ${e.message}`);
+        setConnected(false);
+    }
+}
 
-            // Envoyer au serveur
-            ws.send(text);
-            input.value = '';
-            input.focus();
-        }
+function sendMessage() {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) {
+        addMessage('system', '❌ Pas connecté au serveur');
+        return;
+    }
 
-        // === ÉVÉNEMENTS ===
-        sendBtn.addEventListener('click', sendMessage);
+    const text = input.value.trim();
+    if (!text) return;
 
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
+    // Afficher le message dans la bulle "self"
+    addMessage('self', text, 'Moi');
 
-        // Connexion automatique au chargement
-        window.addEventListener('load', () => {
-            setTimeout(connect, 500);
-        });
+    // Envoyer au serveur
+    ws.send(JSON.stringify({
+        type: 'message',
+        content: text
+    }));
+    input.value = '';
+    input.focus();
+}
 
-        // Reconnecter si on clique sur le statut
-        statusEl.addEventListener('click', () => {
-            if (!connected) {
-                connect();
-            }
-        });
+// ============================================================
+// ÉVÉNEMENTS
+// ============================================================
+sendBtn.addEventListener('click', sendMessage);
 
-        // === MESSAGE D'ACCUEIL ===
-        addMessage('system', '💬 Bienvenue sur le chat WebSocket !');
-        addMessage('system', '📋 Tape /help pour voir les commandes.');
-        addMessage('system', `🔗 Serveur : ${WS_URL}`);
-    </script>
+input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+statusEl.addEventListener('click', () => {
+    if (!connected) {
+        connect();
+    }
+});
+
+// ============================================================
+// DÉMARRAGE
+// ============================================================
+addMessage('system', '💬 Bienvenue sur le chat WebSocket !');
+addMessage('system', '📋 Tape /help pour voir les commandes.');
+addMessage('system', `🔗 Serveur : ${WS_URL}`);
+
+// Connexion automatique
+setTimeout(connect, 500);
+</script>
 
 </body>
 </html>
