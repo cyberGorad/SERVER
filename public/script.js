@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // API stats en JSON
+    // API stats
     if (req.url === '/stats') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -33,7 +33,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Route 404
     res.writeHead(404);
     res.end('Not Found');
 });
@@ -53,12 +52,15 @@ wss.on('connection', (ws, req) => {
     console.log(`[+] ${clientId} (${clientIP}) connecté`);
     clients.set(ws, { id: clientId, ip: clientIP });
 
-    // Bienvenue
-    ws.send(JSON.stringify({
+    // ============================================================
+    // MESSAGE DE BIENVENUE
+    // ============================================================
+    const welcomeMsg = JSON.stringify({
         type: 'system',
         message: `👋 Bienvenue ${clientId} ! Tape /help pour la liste des commandes.`,
         users: Array.from(clients.values()).map(c => c.id)
-    }));
+    });
+    ws.send(welcomeMsg);
 
     // Notifier les autres
     broadcast({
@@ -67,16 +69,31 @@ wss.on('connection', (ws, req) => {
         users: Array.from(clients.values()).map(c => c.id)
     }, ws);
 
-    // Réception de message
+    // ============================================================
+    // RÉCEPTION DES MESSAGES
+    // ============================================================
     ws.on('message', (data) => {
         const raw = data.toString().trim();
         if (!raw) return;
 
         const user = clients.get(ws);
+        if (!user) return;
+
         console.log(`[${user.id}] ${raw}`);
 
-        // === COMMANDES ===
-        if (raw.startsWith('/')) {
+        // --- DÉTECTION DU TYPE DE MESSAGE ---
+        let isJson = false;
+        let parsed = null;
+
+        try {
+            parsed = JSON.parse(raw);
+            isJson = true;
+        } catch (e) {
+            isJson = false;
+        }
+
+        // --- COMMANDES (pour les clients texte brut) ---
+        if (!isJson && raw.startsWith('/')) {
             const parts = raw.split(' ');
             const cmd = parts[0].toLowerCase();
 
@@ -84,17 +101,9 @@ wss.on('connection', (ws, req) => {
                 case '/help':
                     ws.send(JSON.stringify({
                         type: 'system',
-                        message: `
-📋 Commandes :
-  /help       - Aide
-  /nick <nom> - Change de pseudo
-  /users      - Liste des utilisateurs
-  /whoami     - Ton pseudo
-  /ping       - Test de latence
-  /exit       - Quitte
-                        `
+                        message: `📋 Commandes : /help /nick <nom> /users /whoami /ping /exit`
                     }));
-                    break;
+                    return;
 
                 case '/nick':
                     if (parts.length < 2) {
@@ -112,7 +121,7 @@ wss.on('connection', (ws, req) => {
                         message: `✏️ ${oldName} s'appelle maintenant ${newName}`,
                         users: Array.from(clients.values()).map(c => c.id)
                     }, ws);
-                    break;
+                    return;
 
                 case '/users':
                     const userList = Array.from(clients.values()).map(c => `  - ${c.id}`).join('\n');
@@ -120,21 +129,21 @@ wss.on('connection', (ws, req) => {
                         type: 'system',
                         message: `👥 Connectés (${clients.size}) :\n${userList}`
                     }));
-                    break;
+                    return;
 
                 case '/whoami':
                     ws.send(JSON.stringify({
                         type: 'system',
                         message: `👤 Tu es : ${user.id}`
                     }));
-                    break;
+                    return;
 
                 case '/ping':
                     ws.send(JSON.stringify({
                         type: 'system',
                         message: '🏓 Pong !'
                     }));
-                    break;
+                    return;
 
                 case '/exit':
                     ws.send(JSON.stringify({
@@ -142,27 +151,55 @@ wss.on('connection', (ws, req) => {
                         message: '👋 Déconnexion...'
                     }));
                     ws.close();
-                    break;
+                    return;
 
                 default:
                     ws.send(JSON.stringify({
                         type: 'system',
                         message: `❌ Commande inconnue : ${cmd}. Tape /help.`
                     }));
+                    return;
             }
-            return;
         }
 
-        // === MESSAGE TEXTE ===
+        // --- TRAITEMENT DES MESSAGES JSON (client web / Python) ---
+        if (isJson && parsed) {
+            // Message standard (client web)
+            if (parsed.type === 'message') {
+                broadcast({
+                    type: 'message',
+                    from: user.id,
+                    content: parsed.content || parsed.message || raw,
+                    timestamp: new Date().toLocaleTimeString()
+                }, ws);
+                return;
+            }
+            // Changement de pseudo (client web)
+            if (parsed.type === 'setname' && parsed.name) {
+                const oldName = user.id;
+                user.id = parsed.name;
+                broadcast({
+                    type: 'system',
+                    message: `✏️ ${oldName} s'appelle maintenant ${parsed.name}`,
+                    users: Array.from(clients.values()).map(c => c.id)
+                }, ws);
+                return;
+            }
+        }
+
+        // --- MESSAGE TEXTE BRUT (client Python / netcat) ---
+        // On broadcast le message tel quel
         broadcast({
             type: 'message',
             from: user.id,
             content: raw,
             timestamp: new Date().toLocaleTimeString()
-        });
+        }, ws);
     });
 
-    // Déconnexion
+    // ============================================================
+    // DÉCONNEXION
+    // ============================================================
     ws.on('close', () => {
         const user = clients.get(ws);
         if (user) {
@@ -182,7 +219,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // ============================================================
-// BROADCAST
+// FONCTION BROADCAST
 // ============================================================
 function broadcast(data, exclude) {
     const msg = typeof data === 'string' ? data : JSON.stringify(data);
@@ -194,7 +231,7 @@ function broadcast(data, exclude) {
 }
 
 // ============================================================
-// PING/PONG (garder les connexions actives sur Render)
+// PING/PONG (pour Render)
 // ============================================================
 setInterval(() => {
     wss.clients.forEach((client) => {
